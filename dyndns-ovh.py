@@ -6,8 +6,6 @@
 import os
 import sys
 import requests
-import http.client
-from base64 import b64encode
 
 OVH_DYNDNS_USERNAME= os.environ["OVH_DYNDNS_USERNAME"]
 OVH_DYNDNS_PASSWORD= os.environ["OVH_DYNDNS_PASSWORD"]
@@ -64,27 +62,26 @@ try:
 except:
 	sys.exit("[-] Failed to query IP from livebox (%s)" % LIVEBOX_ADDRESS)
 
-#Time to update our DNS field.
-conn = http.client.HTTPSConnection("www.ovh.com")
-userAndPass = OVH_DYNDNS_USERNAME + ":" + OVH_DYNDNS_PASSWORD
-headers = { 'Authorization' : 'Basic %s ' % b64encode( bytes(userAndPass, "utf-8") ).decode("ascii")}
-conn.request("GET", "/nic/update?system=dyndns&hostname=%s&myip=%s" % (OVH_DYNDNS_DOMAIN, ip), headers = headers)
 
-r1 = conn.getresponse()
-if(r1.status != 200):
-	print("[-] Can't connect to ovh to update DNS.", file=sys.stderr)
-	print("\tHTTP Error code: %i" % r1.status, file=sys.stderr)
-	sys.exit()
+try:
+	r = requests.get("https://www.ovh.com/nic/update",
+				auth=(OVH_DYNDNS_USERNAME, OVH_DYNDNS_PASSWORD),
+				params={
+					"system": "dyndns",
+					"hostname": OVH_DYNDNS_DOMAIN,
+					"ip": ip,
+				}
+			)
+except:
+	sys.exit("[-] Failed to connect to OVH")
 
-line = str(r1.readline())
-r1.close()
+if(r.status_code != 200):
+	sys.exit("[-] Can't connect to ovh to update DNS.\n\tHTTP Error code: %i" % r.status)
 
 #If the ip did change, write it. (the crontab will sent it via mail)
-if(line.find("good") >= 0):
+if("good" in r.text):
 	print("[+] IP of %s changed to %s" % (OVH_DYNDNS_DOMAIN, ip))
+elif("nochg" in r.text):
+	pass
 else:
-	#nochg is OK, the rest are probably errors.
-	if(line.find("nochg") < 0 ):
-		print("[-] Something went wrong while updating DNS.", file=sys.stderr)
-		print("Return content: %s" % line[2:-1], file=sys.stderr)
-
+	sys.exit("[-] Something went wrong while updating DNS.\n\tReturned content: %s", r.text)
