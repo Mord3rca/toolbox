@@ -3,8 +3,9 @@
 #The livebox can't use DynDNS with OVH ...
 #So this script go into the crontab.
 
-import re
+import os
 import sys
+import requests
 import http.client
 from base64 import b64encode
 
@@ -12,26 +13,56 @@ OVH_DYNDNS_USERNAME= "USERNAME"
 OVH_DYNDNS_PASSWORD= "PASSWORD"
 OVH_DYNDNS_DOMAIN  = "example.com"
 
-DYNDNS_WEB_GETIP = "checkip.dyndns.org"
-RE_IP_PATTERN = "\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3}"
+LIVEBOX_USERNAME = os.environ["LIVEBOX_USERNAME"]
+LIVEBOX_PASSWORD = os.environ["LIVEBOX_PASSWORD"]
+LIVEBOX_ADDRESS  = os.environ["LIVEBOX_ADDRESS"]
 
-#Get our IP by visiting DYNDNS website
-conn = http.client.HTTPConnection( DYNDNS_WEB_GETIP )
-conn.request("GET", "/")
+def getLiveboxWAN4(addr, user, passwd):
+	endpoint = f"http://{addr}/ws"
+	s = requests.Session()
 
-r1 = conn.getresponse()
-if(r1.status != 200):
-	print("[-] Can't connect to " + DYNDNS_WEB_GETIP, file=sys.stderr )
-	sys.exit()
+	r = s.get(f"http://{addr}/", headers={"Accept-Language": "en-US,en;q=0.5"});
 
-matchObj = re.search(RE_IP_PATTERN, str(r1.readline()))
-r1.close() #Be gentle ... cleanup your mess.
+	r = s.post(endpoint, json={
+		"method": "createContext",
+		"parameters": {
+				"applicationName": "webui",
+				"password": passwd,
+				"username": user,
+			},
+			"service": "sah.Device.Information",
+		}, headers={
+			"Content-Type": "application/x-sah-ws-4-call+json",
+			"Authorization": "X-Sah-Login",
+		});
 
-if not matchObj:
-	print("[-] " + DYNDNS_WEB_GETIP + " did not return our IP.", file=sys.stderr)
-	sys.exit()
+	if r.json()["status"] != 0:
+		raise Exception("Logging error");
 
-ip = matchObj.group()
+	contextID=r.json()["data"]["contextID"];
+	s.cookies.set("sah/contextId", contextID);
+
+	endpoint_headers={
+		"Content-Type": "application/x-sah-ws-4-call+json",
+		"X-Context": contextID,
+		"Authorization": f"X-Sah {contextID}",
+	}
+
+	r = s.post(endpoint, json={
+			"method": "getWANStatus",
+			"parameters": {},
+			"service": "NMC",
+		}, headers=endpoint_headers)
+
+	if not r.json()["status"]:
+		raise Exception("Failed to query WAN Status");
+
+	return r.json()["data"]["IPAddress"];
+
+try:
+	ip = getLiveboxWAN4(LIVEBOX_ADDRESS, LIVEBOX_USERNAME, LIVEBOX_PASSWORD)
+except:
+	sys.exit("[-] Failed to query IP from livebox (%s)" % LIVEBOX_ADDRESS)
 
 #Time to update our DNS field.
 conn = http.client.HTTPSConnection("www.ovh.com")
