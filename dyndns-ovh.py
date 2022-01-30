@@ -60,7 +60,7 @@ def getLiveboxWAN4(addr, user, passwd):
 try:
 	ip = getLiveboxWAN4(LIVEBOX_ADDRESS, LIVEBOX_USERNAME, LIVEBOX_PASSWORD)
 except:
-	sys.exit("[-] Failed to query IP from livebox (%s)" % LIVEBOX_ADDRESS)
+	sys.exit(f"[-] Failed to query IP from livebox ({LIVEBOX_ADDRESS})")
 
 
 try:
@@ -76,12 +76,12 @@ except:
 	sys.exit("[-] Failed to connect to OVH")
 
 if(r.status_code != 200):
-	sys.exit("[-] Can't connect to ovh to update DNS.\n\tHTTP Error code: %i" % r.status)
+	sys.exit(f"[-] Can't connect to ovh to update DNS.\n\tHTTP Error code: {r.status_code}")
 
 #If the ip did change, write it. (the crontab will sent it via mail)
 if("good" in r.text):
-	print("[+] IP of %s changed to %s" % (OVH_DYNDNS_DOMAIN, ip))
+	print(f"[+] IP of {OVH_DYNDNS_DOMAIN} changed to {ip}")
 elif("nochg" in r.text):
 	pass
 else:
-	sys.exit("[-] Something went wrong while updating DNS.\n\tReturned content: %s", r.text)
+	sys.exit(f"[-] Something went wrong while updating DNS.\n\tReturned content: {r.text}")
